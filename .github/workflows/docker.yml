@@ -34,13 +34,13 @@ jobs:
         uses: docker/metadata-action@v4
         with:
           images: |
-            ghcr.io/Hamburg-Port-Authority/Restart-Pod-Job
+            ghcr.io/stevedetm/Restart-Pod-Job
           labels: |
             org.opencontainers.image.title="GitHubActionHelmDepUpdate"
             org.opencontainers.image.description="Image used by GitHub Action to update helm dependencies"
-            org.opencontainers.image.vendor="https://github.com/Hamburg-Port-Authority"
-            org.label-schema.url="https://github.com/Hamburg-Port-Authority/Restart-Pod-Job"
-            org.label-schema.usage="https://github.com/Hamburg-Port-Authority/Restart-Pod-Job/blob/main/README.md"
+            org.opencontainers.image.vendor="https://github.com/stevedetm"
+            org.label-schema.url="https://github.com/stevedetm/Restart-Pod-Job"
+            org.label-schema.usage="https://github.com/stevedetm/Restart-Pod-Job/blob/main/README.md"
             org.label-schema.schema-version="1.0"
           tags: |
             type=schedule
@@ -67,6 +67,6 @@ jobs:
 
       - name: Verify the images
         run: |
-          cosign verify ghcr.io/Hamburg-Port-Authority/Restart-Pod-Job \
-            --certificate-identity https://github.com/Hamburg-Port-Authority/Restart-Pod-Job/.github/workflows/main.yml@refs/heads/main \
+          cosign verify ghcr.io/stevedetm/Restart-Pod-Job \
+            --certificate-identity https://github.com/stevedetm/Restart-Pod-Job/.github/workflows/main.yml@refs/heads/main \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com | jq         
