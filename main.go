@@ -23,7 +23,7 @@ func main() {
 	}
 
 	log.Println("Starting pod termination task...")
-	if err := terminateAllPods(clientset); err != nil {
+	if err := terminateOldPods(clientset); err != nil {
 		log.Printf("Error terminating pods: %v", err)
 	} else {
 		log.Println("Successfully terminated all pods.")
@@ -38,10 +38,16 @@ func getKubernetesClient() (*kubernetes.Clientset, error) {
 	return kubernetes.NewForConfig(config)
 }
 
-// terminateAllPods deletes all pods in all namespaces
-func terminateAllPods(clientset *kubernetes.Clientset) error {
+// terminateOldPods deletes all pods in all namespaces
+func terminateOldPods(clientset *kubernetes.Clientset) error {
 
 	currentTime := time.Now()
+
+	loc, err := time.LoadLocation("Europe/Berlin")
+	if err != nil {
+		panic(err)
+	}
+	localCurrentTime := time.Now().In(loc)
 	lastRestartedNamespace, lastRestartedResource = "", ""
 
 	// Get all namespaces
@@ -50,19 +56,35 @@ func terminateAllPods(clientset *kubernetes.Clientset) error {
 		return fmt.Errorf("failed to list namespaces: %v", err)
 	}
 	for _, namespace := range namespaces.Items {
-		handleNamespace(clientset, namespace, currentTime)
+		handleNamespace(clientset, namespace, currentTime, localCurrentTime)
 	}
 	return nil
 }
 
-func handleNamespace(clientset *kubernetes.Clientset, namespace v1.Namespace, currentTime time.Time) error {
+func handleNamespace(clientset *kubernetes.Clientset, namespace v1.Namespace, currentTime time.Time, localCurrentTime time.Time) error {
 	ttlInDuration := -1 * time.Second
 	describedNs, err := clientset.CoreV1().Namespaces().Get(context.TODO(), namespace.Name, metav1.GetOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to describe namespace %s: %v", namespace.Name, err)
 	}
 	ttl, exists := describedNs.Annotations["restart.k8s.hpa.de/ttl"]
+	// Check if ttl annotation exist on current namespace
 	if exists {
+		operatingHours, exists := describedNs.Annotations["restart.k8s.hpa.de/operatingHours"]
+		// Check if operatingHours annotation exist on current namespace; if exist -> Check time
+		if exists {
+			inWindow, err := InBlockedWindow(localCurrentTime, operatingHours)
+			// wrong anntotation format used
+			if err != nil {
+				fmt.Errorf("invalid restart-block annotation: %s  %s", operatingHours, err)
+				return nil
+			}
+			// current time is in operatingWindow
+			if inWindow {
+				log.Printf("Deployments in %s will not be restarted due to operatingHours", namespace.Name)
+				return nil
+			}
+		}
 		log.Printf("Namespace %s will be restarted", namespace.Name)
 		// ttl exists -> cast into duration
 		ttlInDuration, err = str2duration.ParseDuration(ttl)
@@ -78,7 +100,7 @@ func handleNamespace(clientset *kubernetes.Clientset, namespace v1.Namespace, cu
 	}
 	for _, pod := range pods.Items {
 		// check annotations of ns if ttl-annotation exists
-		err1 := handlePod(pod, namespace, currentTime, clientset, ttlInDuration)
+		err1 := handlePod(pod, namespace, currentTime, clientset, ttlInDuration, localCurrentTime)
 		if err1 != nil {
 			return err1
 		}
@@ -86,12 +108,28 @@ func handleNamespace(clientset *kubernetes.Clientset, namespace v1.Namespace, cu
 	return nil
 }
 
-func handlePod(pod v1.Pod, namespace v1.Namespace, currentTime time.Time, clientset *kubernetes.Clientset, ttlInDuration time.Duration) error {
+func handlePod(pod v1.Pod, namespace v1.Namespace, currentTime time.Time, clientset *kubernetes.Clientset, ttlInDuration time.Duration, localCurrentTime time.Time) error {
 	if ttlInDuration == -1*time.Second {
+		// only enters this path if no annotation is found on the namespace itself
 		ttl, exists := pod.Annotations["restart.k8s.hpa.de/ttl"]
 		if !exists {
 			log.Printf("Pod %s will not be restarted -> no annotation", pod.Name)
 			return nil
+		}
+		operatingHours, exists := pod.Annotations["restart.k8s.hpa.de/operatingHours"]
+		// Check if operatingHours annotation exist on current pod; if exist -> Check time
+		if exists {
+			inWindow, err := InBlockedWindow(localCurrentTime, operatingHours)
+			// wrong anntotation format used
+			if err != nil {
+				fmt.Errorf("invalid restart-block annotation: %s  %s", operatingHours, err)
+				return nil
+			}
+			// current time is in operatingWindow
+			if inWindow {
+				log.Printf("Deployments in %s will not be restarted due to operatingHours", namespace.Name)
+				return nil
+			}
 		}
 		var err error
 		// ttl exists -> cast into duration
@@ -205,4 +243,60 @@ func restartResource(clientset *kubernetes.Clientset, namespace, resourceName, r
 	}
 	log.Printf("Resource %s in namespace %s has been restarted", resourceName, namespace)
 	return nil
+}
+
+// TODO Überarbeiten / Testen -> Check soll schauen, ob aktuelle Zeit in einem Rahmen liegt (deutsche Zeitzone)
+func InBlockedWindow(now time.Time, value string) (bool, error) {
+	startTOD, endTOD, err := parseDailyWindow(value)
+	if err != nil {
+		return false, err
+	}
+
+	y, m, d := now.Date()
+	loc := now.Location()
+
+	startToday := time.Date(y, m, d, startTOD.Hour(), startTOD.Minute(), 0, 0, loc)
+	endToday := time.Date(y, m, d, endTOD.Hour(), endTOD.Minute(), 0, 0, loc)
+
+	// Same-day window, e.g. 13:00-15:00
+	if endToday.After(startToday) {
+		if (now.Equal(startToday) || now.After(startToday)) && now.Before(endToday) {
+			return true, nil
+		}
+		return false, nil
+	}
+
+	// Overnight window, e.g. 23:00-02:00
+	if now.Equal(startToday) || now.After(startToday) {
+		return true, nil
+	}
+
+	startYesterday := startToday.Add(-24 * time.Hour)
+	if now.After(startYesterday) && now.Before(endToday) {
+		return true, nil
+	}
+
+	return false, nil
+}
+
+func parseDailyWindow(value string) (time.Time, time.Time, error) {
+	const layout = "15:04"
+
+	var startStr, endStr string
+	n, err := fmt.Sscanf(value, "%5s-%5s", &startStr, &endStr)
+	if err != nil || n != 2 {
+		return time.Time{}, time.Time{}, fmt.Errorf("invalid window format %q, expected HH:MM-HH:MM", value)
+	}
+
+	startTOD, err := time.Parse(layout, startStr)
+	if err != nil {
+		return time.Time{}, time.Time{}, fmt.Errorf("invalid start time %q", startStr)
+	}
+
+	endTOD, err := time.Parse(layout, endStr)
+	if err != nil {
+		return time.Time{}, time.Time{}, fmt.Errorf("invalid end time %q", endStr)
+	}
+
+	return startTOD, endTOD, nil
 }
