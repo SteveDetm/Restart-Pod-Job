@@ -119,8 +119,6 @@ func handlePod(pod v1.Pod, namespace v1.Namespace, currentTime time.Time, client
 		operatingHours, exists := pod.Annotations["restart.k8s.hpa.de/operatingHours"]
 		// Check if operatingHours annotation exist on current pod; if exist -> Check time
 		if exists {
-			log.Printf("Operating Hours are %s", operatingHours)
-			log.Printf("Current Job time is %s", localCurrentTime)
 			inWindow, err := InBlockedWindow(localCurrentTime, operatingHours)
 			// wrong anntotation format used
 			if err != nil {
@@ -129,7 +127,7 @@ func handlePod(pod v1.Pod, namespace v1.Namespace, currentTime time.Time, client
 			}
 			// current time is in operatingWindow
 			if inWindow {
-				log.Printf("Deployments in %s will not be restarted due to operatingHours", namespace.Name)
+				log.Printf("Deployment %s will not be restarted due to operatingHours", pod.Name)
 				return nil
 			}
 		}
