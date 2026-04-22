@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log"
 	"time"
@@ -14,8 +15,11 @@ import (
 )
 
 var lastRestartedNamespace, lastRestartedResource string
+var dryrun *bool
 
 func main() {
+	dryrun = flag.Bool("dryrun", false, "wether pods should be terminated")
+	flag.Parse()
 	// Create Kubernetes client
 	clientset, err := getKubernetesClient()
 	if err != nil {
@@ -173,14 +177,18 @@ func restartPodOwner(namespaceName string, podName string, clientset *kubernetes
 	lastRestartedResource = describedPod.OwnerReferences[0].Name
 	lastRestartedNamespace = namespaceName
 
-	switch describedPod.OwnerReferences[0].Kind {
-	case "ReplicaSet":
-		//get Deployment to restart
-		return handleReplicaSet(clientset, namespaceName, describedPod)
-	case "DaemonSet":
-		return restartResource(clientset, namespaceName, describedPod.OwnerReferences[0].Name, describedPod.OwnerReferences[0].Kind)
-	case "StatefulSet":
-		return restartResource(clientset, namespaceName, describedPod.OwnerReferences[0].Name, describedPod.OwnerReferences[0].Kind)
+	if *dryrun {
+		log.Printf("The Pod %s would now be restartet on its owner %s", describedPod.Name, &describedPod.OwnerReferences[0].Name)
+	} else {
+		switch describedPod.OwnerReferences[0].Kind {
+		case "ReplicaSet":
+			//get Deployment to restart
+			return handleReplicaSet(clientset, namespaceName, describedPod)
+		case "DaemonSet":
+			return restartResource(clientset, namespaceName, describedPod.OwnerReferences[0].Name, describedPod.OwnerReferences[0].Kind)
+		case "StatefulSet":
+			return restartResource(clientset, namespaceName, describedPod.OwnerReferences[0].Name, describedPod.OwnerReferences[0].Kind)
+		}
 	}
 	return nil
 }
