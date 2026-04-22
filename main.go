@@ -178,7 +178,7 @@ func restartPodOwner(namespaceName string, podName string, clientset *kubernetes
 	lastRestartedNamespace = namespaceName
 
 	if *dryrun {
-		log.Printf("The Pod %s would now be restartet on its owner %s", describedPod.Name, &describedPod.OwnerReferences[0].Name)
+		log.Printf("The Pod %s would now be restartet on its owner %s", describedPod.Name, describedPod.OwnerReferences[0].Name)
 	} else {
 		switch describedPod.OwnerReferences[0].Kind {
 		case "ReplicaSet":
