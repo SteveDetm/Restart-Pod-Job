@@ -2,7 +2,7 @@
 FROM golang:1.22 AS builder
 ARG TARGETOS
 ARG TARGETARCH
-RUN useradd -u 65532 syncuser
+RUN adduser -D -g '' -u -u 65532 syncuser
 
 WORKDIR /workspace
 # Copy the Go Modules manifests
@@ -24,11 +24,11 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -a -o ma
 
 # Use distroless as minimal base image to package the manager binary
 # Refer to https://github.com/GoogleContainerTools/distroless for more details
-FROM Scratch
+FROM scratch
 WORKDIR /
 COPY --from=builder /workspace/manager .
 COPY --from=0 /etc/passwd /etc/passwd
 
-USER 65532:65532
+USER syncuser
 
 ENTRYPOINT ["/manager"]
