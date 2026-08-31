@@ -4,7 +4,7 @@ ARG TARGETOS
 ARG TARGETARCH
 
 RUN useradd -u 65532 syncuser
-RUN apt-get update update && && apt-get install -y --no-install-recommends tzdata
+RUN apt-get update update && apt-get install -y --no-install-recommends tzdata
 
 WORKDIR /workspace
 # Copy the Go Modules manifests
