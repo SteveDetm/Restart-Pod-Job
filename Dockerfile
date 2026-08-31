@@ -29,7 +29,7 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -a -o ma
 FROM scratch
 WORKDIR /
 
-COPY --from=build /usr/share/zoneinfo /usr/share/zoneinfo
+COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
 COPY --from=builder /workspace/manager .
 COPY --from=0 /etc/passwd /etc/passwd
 
