@@ -4,6 +4,7 @@ ARG TARGETOS
 ARG TARGETARCH
 
 RUN useradd -u 65532 syncuser
+RUN apk update && apk add tzdata
 
 WORKDIR /workspace
 # Copy the Go Modules manifests
@@ -27,8 +28,12 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -a -o ma
 # Refer to https://github.com/GoogleContainerTools/distroless for more details
 FROM scratch
 WORKDIR /
+
+COPY --from=build /usr/share/zoneinfo /usr/share/zoneinfo
 COPY --from=builder /workspace/manager .
 COPY --from=0 /etc/passwd /etc/passwd
+
+ENV TZ Europe/Berlin
 
 USER syncuser
 
