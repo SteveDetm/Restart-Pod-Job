@@ -2,7 +2,8 @@
 FROM golang:1.22 AS builder
 ARG TARGETOS
 ARG TARGETARCH
-RUN adduser -D -g '' -u -u 65532 syncuser
+
+RUN useradd -u 65532 syncuser
 
 WORKDIR /workspace
 # Copy the Go Modules manifests
